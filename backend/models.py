@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 
 class SignupRequest(BaseModel):
@@ -12,6 +12,10 @@ class LoginRequest(BaseModel):
     password: str
 
 class PostCreate(BaseModel):
+    content: str
+    media_url: Optional[str] = None
+
+class CommentCreate(BaseModel):
     content: str
 
 class TokenResponse(BaseModel):

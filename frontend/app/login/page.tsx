@@ -31,7 +31,6 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <h1 className="text-3xl font-bold mb-2">Welcome back</h1>
         <p className="text-zinc-400 mb-8">Login to continue</p>
-
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
             type="text" placeholder="Username" required
@@ -43,15 +42,12 @@ export default function LoginPage() {
             className="bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 focus:outline-none focus:border-zinc-400 transition"
             value={form.password} onChange={e => setForm({...form, password: e.target.value})}
           />
-
           {error && <p className="text-red-400 text-sm">{error}</p>}
-
           <button type="submit" disabled={loading}
             className="bg-white text-black py-3 rounded-xl font-semibold hover:bg-zinc-200 transition disabled:opacity-50">
             {loading ? "Logging in..." : "Login"}
           </button>
         </form>
-
         <p className="text-zinc-500 text-sm mt-6 text-center">
           No account? <Link href="/signup" className="text-white underline">Sign up</Link>
         </p>
