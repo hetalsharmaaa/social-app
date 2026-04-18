@@ -1,7 +1,17 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
-from database import supabase
+from supabase import create_client
 from dependencies import get_current_user
 import uuid
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Use service role key for storage (bypasses RLS)
+storage_client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
 
 router = APIRouter(prefix="/media", tags=["Media"])
 
@@ -15,11 +25,11 @@ def upload_media(file: UploadFile = File(...), current_user: dict = Depends(get_
     filename = f"{uuid.uuid4()}.{ext}"
     contents = file.file.read()
 
-    result = supabase.storage.from_("post-media").upload(
+    storage_client.storage.from_("post-media").upload(
         filename,
         contents,
         {"content-type": file.content_type}
     )
 
-    public_url = supabase.storage.from_("post-media").get_public_url(filename)
+    public_url = storage_client.storage.from_("post-media").get_public_url(filename)
     return {"url": public_url}
