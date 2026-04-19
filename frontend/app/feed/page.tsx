@@ -35,9 +35,10 @@ export default function FeedPage() {
   const [uploading, setUploading] = useState(false);
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [showComments, setShowComments] = useState<Record<string, boolean>>({});
+  const [postStatus, setPostStatus] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { loadMe(); loadFeed(); }, []);
+  useEffect(() => { loadMe(); loadFeed(); loadPostStatus(); }, []);
 
   const loadMe = async () => {
     try {
@@ -50,6 +51,13 @@ export default function FeedPage() {
     try {
       const res = await api.get("/posts/feed");
       setPosts(res.data.posts);
+    } catch {}
+  };
+
+  const loadPostStatus = async () => {
+    try {
+      const res = await api.get("/posts/my-status");
+      setPostStatus(res.data);
     } catch {}
   };
 
@@ -85,6 +93,7 @@ export default function FeedPage() {
       setMediaFile(null);
       setMediaPreview(null);
       loadFeed();
+      loadPostStatus();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to post");
     } finally {
@@ -128,13 +137,32 @@ export default function FeedPage() {
         </div>
       </div>
 
+      {/* Posting status bar */}
+      {postStatus && (
+        <div className={`mb-4 px-4 py-3 rounded-xl text-sm flex items-center justify-between ${
+          postStatus.can_post ? "bg-zinc-900 border border-zinc-800" : "bg-red-950/40 border border-red-800/40"
+        }`}>
+          <span className={postStatus.can_post ? "text-zinc-400" : "text-red-400"}>
+            {postStatus.friend_count === 0 && "⚠️ Add friends to unlock posting"}
+            {postStatus.friend_count > 0 && postStatus.unlimited && "🚀 Unlimited posts unlocked!"}
+            {postStatus.friend_count > 0 && !postStatus.unlimited && (
+              `📝 ${postStatus.today_posts}/${postStatus.daily_limit} posts today`
+            )}
+          </span>
+          <span className="text-zinc-600 text-xs">
+            {postStatus.friend_count} friend{postStatus.friend_count !== 1 ? "s" : ""}
+          </span>
+        </div>
+      )}
+
       {/* Composer */}
       <form onSubmit={handlePost} className="mb-8 bg-zinc-900 rounded-2xl p-4 border border-zinc-800">
         <textarea
-          placeholder="What's on your mind?"
+          placeholder={postStatus?.can_post === false ? "Add more friends to post..." : "What's on your mind?"}
           value={newPost}
           onChange={e => setNewPost(e.target.value)}
-          className="w-full bg-transparent resize-none focus:outline-none text-white placeholder-zinc-600 min-h-[80px]"
+          disabled={postStatus?.can_post === false}
+          className="w-full bg-transparent resize-none focus:outline-none text-white placeholder-zinc-600 min-h-[80px] disabled:opacity-40"
           maxLength={500}
         />
 
@@ -153,13 +181,14 @@ export default function FeedPage() {
         <div className="flex justify-between items-center mt-2">
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => fileRef.current?.click()}
-              className="text-zinc-500 hover:text-white transition text-sm flex items-center gap-1">
+              disabled={postStatus?.can_post === false}
+              className="text-zinc-500 hover:text-white transition text-sm flex items-center gap-1 disabled:opacity-40">
               📸 Photo
             </button>
             <input ref={fileRef} type="file" accept="image/*,video/mp4" className="hidden" onChange={handleFileChange} />
             <span className="text-zinc-600 text-xs">{newPost.length}/500</span>
           </div>
-          <button type="submit" disabled={posting || (!newPost.trim() && !mediaFile)}
+          <button type="submit" disabled={posting || (!newPost.trim() && !mediaFile) || postStatus?.can_post === false}
             className="bg-white text-black px-5 py-2 rounded-full text-sm font-semibold hover:bg-zinc-200 transition disabled:opacity-40">
             {uploading ? "Uploading..." : posting ? "Posting..." : "Post"}
           </button>
@@ -173,7 +202,6 @@ export default function FeedPage() {
         )}
         {posts.map(post => (
           <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-            {/* Author */}
             <div className="flex items-center gap-2 mb-3">
               <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-sm font-bold">
                 {(post.users?.display_name || post.users?.username || "?")[0].toUpperCase()}
@@ -184,10 +212,8 @@ export default function FeedPage() {
               </div>
             </div>
 
-            {/* Content */}
             {post.content && <p className="text-zinc-200 leading-relaxed mb-3">{post.content}</p>}
 
-            {/* Media */}
             {post.media_url && (
               <div className="mb-3">
                 {post.media_url.match(/\.(mp4)$/i) ? (
@@ -200,7 +226,6 @@ export default function FeedPage() {
 
             <p className="text-xs text-zinc-600 mb-3">{new Date(post.created_at).toLocaleString()}</p>
 
-            {/* Actions */}
             <div className="flex items-center gap-4 border-t border-zinc-800 pt-3">
               <button onClick={() => handleLike(post.id)}
                 className={`flex items-center gap-1 text-sm transition ${post.liked_by_me ? "text-red-400" : "text-zinc-500 hover:text-red-400"}`}>
@@ -212,7 +237,6 @@ export default function FeedPage() {
               </button>
             </div>
 
-            {/* Comments */}
             {showComments[post.id] && (
               <div className="mt-3 border-t border-zinc-800 pt-3">
                 {post.comments.map(c => (
