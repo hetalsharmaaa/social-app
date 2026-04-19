@@ -5,8 +5,9 @@ from routers.posts_router import router as posts_router
 from routers.users_router import router as users_router
 from routers.media_router import router as media_router
 from routers.friends_router import router as friends_router
+from routers.notifications_router import router as notifications_router
 
-app = FastAPI(title="SocialApp API", version="3.0.0")
+app = FastAPI(title="SocialApp API", version="5.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,7 +22,8 @@ app.include_router(posts_router)
 app.include_router(users_router)
 app.include_router(media_router)
 app.include_router(friends_router)
+app.include_router(notifications_router)
 
 @app.get("/")
 def root():
-    return {"status": "SocialApp API v3 is running"}
+    return {"status": "SocialApp API v5 is running"}

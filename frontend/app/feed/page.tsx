@@ -37,9 +37,19 @@ export default function FeedPage() {
   const [showComments, setShowComments] = useState<Record<string, boolean>>({});
   const [postStatus, setPostStatus] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [sort, setSort] = useState("latest");
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => { loadMe(); loadFeed(); loadPostStatus(); }, []);
 
+
+  const loadUnreadCount = async () => {
+    try {
+      const res = await api.get("/notifications/unread-count");
+      setUnreadCount(res.data.count);
+    } catch {}
+  };
+  
   const loadMe = async () => {
     try {
       const res = await api.get("/users/me");
@@ -49,11 +59,11 @@ export default function FeedPage() {
 
   const loadFeed = async () => {
     try {
-      const res = await api.get("/posts/feed");
+      const res = await api.get(`/posts/feed?sort=${sort}`);
       setPosts(res.data.posts);
     } catch {}
   };
-
+  
   const loadPostStatus = async () => {
     try {
       const res = await api.get("/posts/my-status");
@@ -126,16 +136,36 @@ export default function FeedPage() {
   return (
     <main className="max-w-2xl mx-auto px-4 py-8">
       {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-6">
           <h1 className="text-2xl font-bold">SocialApp</h1>
           <Link href="/people" className="text-sm text-zinc-400 hover:text-white transition">👥 People</Link>
         </div>
         <div className="flex items-center gap-4">
           {me && <span className="text-zinc-400 text-sm">@{me.username}</span>}
-          <button onClick={logout} className="text-sm text-zinc-500 hover:text-white transition">Logout</button>
-        </div>
-      </div>
+          <Link href="/notifications" className="text-sm text-zinc-400 hover:text-white transition relative">
+          🔔
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-white text-black text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
+              {unreadCount}
+            </span>
+      )}
+    </Link>
+    <button onClick={logout} className="text-sm text-zinc-500 hover:text-white transition">Logout</button>
+  </div>
+</div>
+
+{/* Sort controls */}
+<div className="flex gap-2 mb-4">
+  {["latest", "friends", "trending"].map(s => (
+    <button key={s} onClick={() => { setSort(s); loadFeed(); }}
+      className={`px-4 py-1.5 rounded-full text-sm font-medium transition capitalize ${
+        sort === s ? "bg-white text-black" : "bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800"
+      }`}>
+      {s === "latest" ? "⏱ Latest" : s === "friends" ? "👥 Friends" : "🔥 Trending"}
+    </button>
+  ))}
+</div>
 
       {/* Posting status bar */}
       {postStatus && (

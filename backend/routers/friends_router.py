@@ -55,8 +55,18 @@ def accept_request(requester_username: str, current_user: dict = Depends(get_cur
         .eq("status", "pending")\
         .execute()
 
-    return {"message": "Friend request accepted"}
+    # Notify requester their request was accepted
+    try:
+        supabase.table("notifications").insert({
+            "user_id": requester_id,
+            "actor_id": receiver_id,
+            "type": "friend_accepted",
+        }).execute()
+    except:
+        pass
 
+    return {"message": "Friend request accepted"}
+    
 @router.post("/reject/{requester_username}")
 def reject_request(requester_username: str, current_user: dict = Depends(get_current_user)):
     receiver_id = current_user["sub"]
