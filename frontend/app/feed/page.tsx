@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { logout } from "@/lib/auth";
+import Link from "next/link";
 
 interface Comment {
   id: string;
@@ -117,7 +118,10 @@ export default function FeedPage() {
     <main className="max-w-2xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">SocialApp</h1>
+        <div className="flex items-center gap-6">
+          <h1 className="text-2xl font-bold">SocialApp</h1>
+          <Link href="/people" className="text-sm text-zinc-400 hover:text-white transition">👥 People</Link>
+        </div>
         <div className="flex items-center gap-4">
           {me && <span className="text-zinc-400 text-sm">@{me.username}</span>}
           <button onClick={logout} className="text-sm text-zinc-500 hover:text-white transition">Logout</button>
