@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from models import PostCreate, CommentCreate
-from database import supabase
+from database import get_supabase
+supabase = get_supabase()
 from dependencies import get_current_user
 from datetime import datetime, timezone
 

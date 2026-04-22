@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from models import SignupRequest, LoginRequest, TokenResponse
-from database import supabase
+from database import get_supabase
+supabase = get_supabase()
 from auth import hash_password, verify_password, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["Auth"])

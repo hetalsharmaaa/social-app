@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
-from supabase import create_client
+from database import get_service_supabase
+storage_client = get_service_supabase()
 from dependencies import get_current_user
 import uuid
 import os

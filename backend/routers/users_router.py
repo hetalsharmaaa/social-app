@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
-from database import supabase
+from database import get_supabase
+supabase = get_supabase()
 from dependencies import get_current_user
 
 router = APIRouter(prefix="/users", tags=["Users"])
