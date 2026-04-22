@@ -1,23 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from database import get_service_supabase
-storage_client = get_service_supabase()
 from dependencies import get_current_user
 import uuid
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# Use service role key for storage (bypasses RLS)
-storage_client = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_SERVICE_KEY")
-)
 
 router = APIRouter(prefix="/media", tags=["Media"])
 
 @router.post("/upload")
 def upload_media(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    storage_client = get_service_supabase()
+    
     allowed = ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4"]
     if file.content_type not in allowed:
         raise HTTPException(status_code=400, detail="File type not allowed")
