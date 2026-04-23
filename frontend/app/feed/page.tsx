@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { logout } from "@/lib/auth";
@@ -17,11 +17,13 @@ interface Post {
   id: string;
   content: string;
   media_url?: string;
+  media_type?: string;
   created_at: string;
   like_count: number;
   liked_by_me: boolean;
+  is_mine: boolean;
   comments: Comment[];
-  users: { username: string; display_name: string };
+  users: { username: string; display_name: string; avatar_url?: string };
 }
 
 export default function FeedPage() {
@@ -33,6 +35,7 @@ export default function FeedPage() {
   const [error, setError] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<string>("image");
   const [uploading, setUploading] = useState(false);
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [showComments, setShowComments] = useState<Record<string, boolean>>({});
@@ -40,6 +43,7 @@ export default function FeedPage() {
   const [sort, setSort] = useState("latest");
   const [unreadCount, setUnreadCount] = useState(0);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [deletingPost, setDeletingPost] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const refreshInterval = useRef<any>(null);
 
@@ -49,31 +53,20 @@ export default function FeedPage() {
     loadPostStatus();
     loadUnreadCount();
 
-    // Auto-refresh feed every 30 seconds
     refreshInterval.current = setInterval(() => {
       loadFeed();
       loadUnreadCount();
       setLastRefresh(new Date());
     }, 30000);
 
-    // Realtime subscription for new posts
     const channel = supabase
       .channel("posts-channel")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, () => {
-        loadFeed();
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "likes" }, () => {
-        loadFeed();
-      })
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "likes" }, () => {
-        loadFeed();
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "comments" }, () => {
-        loadFeed();
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, () => {
-        loadUnreadCount();
-      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, () => loadFeed())
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "posts" }, () => loadFeed())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "likes" }, () => loadFeed())
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "likes" }, () => loadFeed())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "comments" }, () => loadFeed())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, () => loadUnreadCount())
       .subscribe();
 
     return () => {
@@ -82,10 +75,7 @@ export default function FeedPage() {
     };
   }, []);
 
-  // Re-subscribe when sort changes
-  useEffect(() => {
-    loadFeed();
-  }, [sort]);
+  useEffect(() => { loadFeed(); }, [sort]);
 
   const loadMe = async () => {
     try {
@@ -120,6 +110,7 @@ export default function FeedPage() {
     if (!file) return;
     setMediaFile(file);
     setMediaPreview(URL.createObjectURL(file));
+    setMediaType(file.type.startsWith("video") ? "video" : "image");
   };
 
   const handlePost = async (e: React.FormEvent) => {
@@ -130,6 +121,8 @@ export default function FeedPage() {
 
     try {
       let media_url = null;
+      let media_type = null;
+
       if (mediaFile) {
         setUploading(true);
         const formData = new FormData();
@@ -138,10 +131,11 @@ export default function FeedPage() {
           headers: { "Content-Type": "multipart/form-data" }
         });
         media_url = uploadRes.data.url;
+        media_type = mediaType;
         setUploading(false);
       }
 
-      await api.post("/posts/", { content: newPost, media_url });
+      await api.post("/posts/", { content: newPost, media_url, media_type });
       setNewPost("");
       setMediaFile(null);
       setMediaPreview(null);
@@ -155,18 +149,26 @@ export default function FeedPage() {
     }
   };
 
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm("Delete this post?")) return;
+    setDeletingPost(postId);
+    try {
+      await api.delete(`/posts/${postId}`);
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      loadPostStatus();
+    } catch {}
+    setDeletingPost(null);
+  };
+
   const handleLike = async (postId: string) => {
-    // Optimistic update
     setPosts(prev => prev.map(p => p.id === postId ? {
       ...p,
       liked_by_me: !p.liked_by_me,
       like_count: p.liked_by_me ? p.like_count - 1 : p.like_count + 1
     } : p));
-
     try {
       await api.post(`/posts/${postId}/like`);
     } catch {
-      // Revert on error
       setPosts(prev => prev.map(p => p.id === postId ? {
         ...p,
         liked_by_me: !p.liked_by_me,
@@ -183,6 +185,17 @@ export default function FeedPage() {
       setCommentInputs(prev => ({ ...prev, [postId]: "" }));
       loadFeed();
     } catch {}
+  };
+
+  const getAvatar = (user: any, size = "w-8 h-8") => {
+    if (user?.avatar_url) {
+      return <img src={user.avatar_url} alt="avatar" className={`${size} rounded-full object-cover`} />;
+    }
+    return (
+      <div className={`${size} rounded-full bg-zinc-700 flex items-center justify-center text-sm font-bold flex-shrink-0`}>
+        {(user?.display_name || user?.username || "?")[0].toUpperCase()}
+      </div>
+    );
   };
 
   return (
@@ -219,11 +232,11 @@ export default function FeedPage() {
           </button>
         ))}
         <span className="ml-auto text-xs text-zinc-600 self-center">
-          Updated {lastRefresh.toLocaleTimeString()}
+          {lastRefresh.toLocaleTimeString()}
         </span>
       </div>
 
-      {/* Posting status bar */}
+      {/* Posting status */}
       {postStatus && (
         <div className={`mb-4 px-4 py-3 rounded-xl text-sm flex items-center justify-between ${
           postStatus.can_post ? "bg-zinc-900 border border-zinc-800" : "bg-red-950/40 border border-red-800/40"
@@ -231,13 +244,9 @@ export default function FeedPage() {
           <span className={postStatus.can_post ? "text-zinc-400" : "text-red-400"}>
             {postStatus.friend_count === 0 && "⚠️ Add friends to unlock posting"}
             {postStatus.friend_count > 0 && postStatus.unlimited && "🚀 Unlimited posts unlocked!"}
-            {postStatus.friend_count > 0 && !postStatus.unlimited && (
-              `📝 ${postStatus.today_posts}/${postStatus.daily_limit} posts today`
-            )}
+            {postStatus.friend_count > 0 && !postStatus.unlimited && `📝 ${postStatus.today_posts}/${postStatus.daily_limit} posts today`}
           </span>
-          <span className="text-zinc-600 text-xs">
-            {postStatus.friend_count} friend{postStatus.friend_count !== 1 ? "s" : ""}
-          </span>
+          <span className="text-zinc-600 text-xs">{postStatus.friend_count} friend{postStatus.friend_count !== 1 ? "s" : ""}</span>
         </div>
       )}
 
@@ -254,7 +263,11 @@ export default function FeedPage() {
 
         {mediaPreview && (
           <div className="relative mt-2 mb-3">
-            <img src={mediaPreview} alt="preview" className="rounded-xl max-h-60 object-cover w-full" />
+            {mediaType === "video" ? (
+              <video src={mediaPreview} controls className="rounded-xl max-h-60 w-full object-cover" />
+            ) : (
+              <img src={mediaPreview} alt="preview" className="rounded-xl max-h-60 object-cover w-full" />
+            )}
             <button type="button" onClick={() => { setMediaFile(null); setMediaPreview(null); }}
               className="absolute top-2 right-2 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm hover:bg-black transition">
               ✕
@@ -268,10 +281,10 @@ export default function FeedPage() {
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => fileRef.current?.click()}
               disabled={postStatus?.can_post === false}
-              className="text-zinc-500 hover:text-white transition text-sm flex items-center gap-1 disabled:opacity-40">
-              📸 Photo
+              className="text-zinc-500 hover:text-white transition text-sm disabled:opacity-40">
+              📸 Photo/Video
             </button>
-            <input ref={fileRef} type="file" accept="image/*,video/mp4" className="hidden" onChange={handleFileChange} />
+            <input ref={fileRef} type="file" accept="image/*,video/mp4,video/mov,video/avi" className="hidden" onChange={handleFileChange} />
             <span className="text-zinc-600 text-xs">{newPost.length}/500</span>
           </div>
           <button type="submit" disabled={posting || (!newPost.trim() && !mediaFile) || postStatus?.can_post === false}
@@ -289,15 +302,18 @@ export default function FeedPage() {
         {posts.map(post => (
           <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-sm font-bold">
-                {(post.users?.display_name || post.users?.username || "?")[0].toUpperCase()}
-              </div>
-              <div>
+              {getAvatar(post.users)}
+              <div className="flex-1">
                 <p className="text-sm font-semibold">{post.users?.display_name || post.users?.username}</p>
                 <p className="text-xs text-zinc-500">@{post.users?.username}</p>
               </div>
-              {(post as any).is_friend && (
-                <span className="ml-auto text-xs text-zinc-600 border border-zinc-700 px-2 py-0.5 rounded-full">Friend</span>
+              {post.is_mine && (
+                <button
+                  onClick={() => handleDeletePost(post.id)}
+                  disabled={deletingPost === post.id}
+                  className="text-zinc-600 hover:text-red-400 transition text-xs px-2 py-1 rounded-lg hover:bg-red-400/10 disabled:opacity-40">
+                  {deletingPost === post.id ? "..." : "🗑 Delete"}
+                </button>
               )}
             </div>
 
@@ -305,7 +321,7 @@ export default function FeedPage() {
 
             {post.media_url && (
               <div className="mb-3">
-                {post.media_url.match(/\.(mp4)$/i) ? (
+                {post.media_type === "video" || post.media_url.match(/\.(mp4|mov|avi)$/i) ? (
                   <video src={post.media_url} controls className="rounded-xl w-full max-h-80 object-cover" />
                 ) : (
                   <img src={post.media_url} alt="media" className="rounded-xl w-full max-h-80 object-cover" />

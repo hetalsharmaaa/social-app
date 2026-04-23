@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends
 from models import PostCreate, CommentCreate
 from database import get_supabase
-supabase = get_supabase()
 from dependencies import get_current_user
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
 
 def get_friend_count(user_id: str) -> int:
+    supabase = get_supabase()
     result = supabase.table("friendships")\
         .select("id")\
         .or_(f"requester_id.eq.{user_id},receiver_id.eq.{user_id}")\
@@ -16,6 +16,7 @@ def get_friend_count(user_id: str) -> int:
     return len(result.data)
 
 def get_today_post_count(user_id: str) -> int:
+    supabase = get_supabase()
     today = datetime.now(timezone.utc).date().isoformat()
     result = supabase.table("posts")\
         .select("id")\
@@ -36,6 +37,7 @@ def check_posting_allowed(user_id: str):
         raise HTTPException(status_code=403, detail="You can only post 2 times per day. Add more friends to unlock unlimited posts!")
 
 def create_notification(user_id: str, actor_id: str, type: str, post_id: str = None):
+    supabase = get_supabase()
     if user_id == actor_id:
         return
     try:
@@ -51,20 +53,20 @@ def create_notification(user_id: str, actor_id: str, type: str, post_id: str = N
 @router.post("/")
 def create_post(body: PostCreate, current_user: dict = Depends(get_current_user)):
     from routers.gamification_router import update_streak, check_and_award_badges
+    supabase = get_supabase()
     user_id = current_user["sub"]
     check_posting_allowed(user_id)
 
-    supabase = get_supabase()
     result = supabase.table("posts").insert({
         "user_id": user_id,
         "content": body.content,
         "media_url": body.media_url,
+        "media_type": body.media_type,
     }).execute()
 
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create post")
 
-    # Update streak and check badges
     try:
         update_streak(user_id)
         check_and_award_badges(user_id)
@@ -72,12 +74,29 @@ def create_post(body: PostCreate, current_user: dict = Depends(get_current_user)
         pass
 
     return {"message": "Post created", "post": result.data[0]}
-    
-@router.get("/feed")
-def get_feed(current_user: dict = Depends(get_current_user), sort: str = "latest"):
+
+@router.delete("/{post_id}")
+def delete_post(post_id: str, current_user: dict = Depends(get_current_user)):
+    supabase = get_supabase()
     user_id = current_user["sub"]
 
-    # Get friend IDs
+    # Verify ownership
+    post = supabase.table("posts").select("user_id, media_url").eq("id", post_id).execute()
+    if not post.data:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.data[0]["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not your post")
+
+    # Delete post (cascade deletes likes/comments)
+    supabase.table("posts").delete().eq("id", post_id).execute()
+
+    return {"message": "Post deleted"}
+
+@router.get("/feed")
+def get_feed(current_user: dict = Depends(get_current_user), sort: str = "latest"):
+    supabase = get_supabase()
+    user_id = current_user["sub"]
+
     friendships = supabase.table("friendships")\
         .select("requester_id, receiver_id")\
         .or_(f"requester_id.eq.{user_id},receiver_id.eq.{user_id}")\
@@ -91,7 +110,6 @@ def get_feed(current_user: dict = Depends(get_current_user), sort: str = "latest
         if f["receiver_id"] != user_id:
             friend_ids.add(f["receiver_id"])
 
-    # Get all posts
     result = supabase.table("posts")\
         .select("*, users(username, display_name)")\
         .order("created_at", desc=True)\
@@ -100,12 +118,12 @@ def get_feed(current_user: dict = Depends(get_current_user), sort: str = "latest
 
     posts = result.data
 
-    # Attach likes + comments
     for post in posts:
         likes = supabase.table("likes").select("id, user_id").eq("post_id", post["id"]).execute()
         post["like_count"] = len(likes.data)
         post["liked_by_me"] = any(l["user_id"] == user_id for l in likes.data)
         post["is_friend"] = post["user_id"] in friend_ids or post["user_id"] == user_id
+        post["is_mine"] = post["user_id"] == user_id
 
         comments = supabase.table("comments")\
             .select("*, users(username, display_name)")\
@@ -114,9 +132,7 @@ def get_feed(current_user: dict = Depends(get_current_user), sort: str = "latest
             .execute()
         post["comments"] = comments.data
 
-    # Sort: friends first, then latest
     if sort == "friends":
-        posts.sort(key=lambda p: (not p["is_friend"], p["created_at"]), reverse=False)
         posts.sort(key=lambda p: p["is_friend"], reverse=True)
     elif sort == "trending":
         posts.sort(key=lambda p: p["like_count"] + len(p["comments"]), reverse=True)
@@ -152,6 +168,7 @@ def get_posting_status(current_user: dict = Depends(get_current_user)):
 
 @router.post("/{post_id}/like")
 def toggle_like(post_id: str, current_user: dict = Depends(get_current_user)):
+    supabase = get_supabase()
     user_id = current_user["sub"]
 
     existing = supabase.table("likes").select("id").eq("post_id", post_id).eq("user_id", user_id).execute()
@@ -161,7 +178,6 @@ def toggle_like(post_id: str, current_user: dict = Depends(get_current_user)):
         return {"liked": False}
     else:
         supabase.table("likes").insert({"user_id": user_id, "post_id": post_id}).execute()
-        # Notify post owner
         post = supabase.table("posts").select("user_id").eq("id", post_id).execute()
         if post.data:
             create_notification(post.data[0]["user_id"], user_id, "like", post_id)
@@ -169,6 +185,7 @@ def toggle_like(post_id: str, current_user: dict = Depends(get_current_user)):
 
 @router.post("/{post_id}/comment")
 def add_comment(post_id: str, body: CommentCreate, current_user: dict = Depends(get_current_user)):
+    supabase = get_supabase()
     user_id = current_user["sub"]
 
     result = supabase.table("comments").insert({
@@ -180,7 +197,6 @@ def add_comment(post_id: str, body: CommentCreate, current_user: dict = Depends(
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to add comment")
 
-    # Notify post owner
     post = supabase.table("posts").select("user_id").eq("id", post_id).execute()
     if post.data:
         create_notification(post.data[0]["user_id"], user_id, "comment", post_id)
@@ -189,6 +205,7 @@ def add_comment(post_id: str, body: CommentCreate, current_user: dict = Depends(
 
 @router.delete("/{post_id}/comment/{comment_id}")
 def delete_comment(post_id: str, comment_id: str, current_user: dict = Depends(get_current_user)):
+    supabase = get_supabase()
     user_id = current_user["sub"]
     supabase.table("comments").delete()\
         .eq("id", comment_id).eq("user_id", user_id).execute()
