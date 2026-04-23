@@ -50,9 +50,11 @@ def create_notification(user_id: str, actor_id: str, type: str, post_id: str = N
 
 @router.post("/")
 def create_post(body: PostCreate, current_user: dict = Depends(get_current_user)):
+    from routers.gamification_router import update_streak, check_and_award_badges
     user_id = current_user["sub"]
     check_posting_allowed(user_id)
 
+    supabase = get_supabase()
     result = supabase.table("posts").insert({
         "user_id": user_id,
         "content": body.content,
@@ -62,8 +64,15 @@ def create_post(body: PostCreate, current_user: dict = Depends(get_current_user)
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create post")
 
-    return {"message": "Post created", "post": result.data[0]}
+    # Update streak and check badges
+    try:
+        update_streak(user_id)
+        check_and_award_badges(user_id)
+    except:
+        pass
 
+    return {"message": "Post created", "post": result.data[0]}
+    
 @router.get("/feed")
 def get_feed(current_user: dict = Depends(get_current_user), sort: str = "latest"):
     user_id = current_user["sub"]

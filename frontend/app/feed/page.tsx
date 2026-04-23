@@ -192,6 +192,7 @@ export default function FeedPage() {
         <div className="flex items-center gap-6">
           <h1 className="text-2xl font-bold">SocialApp</h1>
           <Link href="/people" className="text-sm text-zinc-400 hover:text-white transition">👥 People</Link>
+          <Link href="/profile" className="text-sm text-zinc-400 hover:text-white transition">👤 Profile</Link>
         </div>
         <div className="flex items-center gap-4">
           {me && <span className="text-zinc-400 text-sm">@{me.username}</span>}
