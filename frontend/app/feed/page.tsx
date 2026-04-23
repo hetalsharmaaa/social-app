@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { logout } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 
 interface Comment {
@@ -36,20 +37,56 @@ export default function FeedPage() {
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [showComments, setShowComments] = useState<Record<string, boolean>>({});
   const [postStatus, setPostStatus] = useState<any>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const [sort, setSort] = useState("latest");
   const [unreadCount, setUnreadCount] = useState(0);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const fileRef = useRef<HTMLInputElement>(null);
+  const refreshInterval = useRef<any>(null);
 
-  useEffect(() => { loadMe(); loadFeed(); loadPostStatus(); }, []);
+  useEffect(() => {
+    loadMe();
+    loadFeed();
+    loadPostStatus();
+    loadUnreadCount();
 
+    // Auto-refresh feed every 30 seconds
+    refreshInterval.current = setInterval(() => {
+      loadFeed();
+      loadUnreadCount();
+      setLastRefresh(new Date());
+    }, 30000);
 
-  const loadUnreadCount = async () => {
-    try {
-      const res = await api.get("/notifications/unread-count");
-      setUnreadCount(res.data.count);
-    } catch {}
-  };
-  
+    // Realtime subscription for new posts
+    const channel = supabase
+      .channel("posts-channel")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, () => {
+        loadFeed();
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "likes" }, () => {
+        loadFeed();
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "likes" }, () => {
+        loadFeed();
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "comments" }, () => {
+        loadFeed();
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, () => {
+        loadUnreadCount();
+      })
+      .subscribe();
+
+    return () => {
+      clearInterval(refreshInterval.current);
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Re-subscribe when sort changes
+  useEffect(() => {
+    loadFeed();
+  }, [sort]);
+
   const loadMe = async () => {
     try {
       const res = await api.get("/users/me");
@@ -63,11 +100,18 @@ export default function FeedPage() {
       setPosts(res.data.posts);
     } catch {}
   };
-  
+
   const loadPostStatus = async () => {
     try {
       const res = await api.get("/posts/my-status");
       setPostStatus(res.data);
+    } catch {}
+  };
+
+  const loadUnreadCount = async () => {
+    try {
+      const res = await api.get("/notifications/unread-count");
+      setUnreadCount(res.data.count);
     } catch {}
   };
 
@@ -86,7 +130,6 @@ export default function FeedPage() {
 
     try {
       let media_url = null;
-
       if (mediaFile) {
         setUploading(true);
         const formData = new FormData();
@@ -113,14 +156,23 @@ export default function FeedPage() {
   };
 
   const handleLike = async (postId: string) => {
+    // Optimistic update
+    setPosts(prev => prev.map(p => p.id === postId ? {
+      ...p,
+      liked_by_me: !p.liked_by_me,
+      like_count: p.liked_by_me ? p.like_count - 1 : p.like_count + 1
+    } : p));
+
     try {
       await api.post(`/posts/${postId}/like`);
+    } catch {
+      // Revert on error
       setPosts(prev => prev.map(p => p.id === postId ? {
         ...p,
         liked_by_me: !p.liked_by_me,
         like_count: p.liked_by_me ? p.like_count - 1 : p.like_count + 1
       } : p));
-    } catch {}
+    }
   };
 
   const handleComment = async (postId: string) => {
@@ -144,28 +196,31 @@ export default function FeedPage() {
         <div className="flex items-center gap-4">
           {me && <span className="text-zinc-400 text-sm">@{me.username}</span>}
           <Link href="/notifications" className="text-sm text-zinc-400 hover:text-white transition relative">
-          🔔
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-white text-black text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
-              {unreadCount}
-            </span>
-      )}
-    </Link>
-    <button onClick={logout} className="text-sm text-zinc-500 hover:text-white transition">Logout</button>
-  </div>
-</div>
+            🔔
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-white text-black text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </Link>
+          <button onClick={logout} className="text-sm text-zinc-500 hover:text-white transition">Logout</button>
+        </div>
+      </div>
 
-{/* Sort controls */}
-<div className="flex gap-2 mb-4">
-  {["latest", "friends", "trending"].map(s => (
-    <button key={s} onClick={() => { setSort(s); loadFeed(); }}
-      className={`px-4 py-1.5 rounded-full text-sm font-medium transition capitalize ${
-        sort === s ? "bg-white text-black" : "bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800"
-      }`}>
-      {s === "latest" ? "⏱ Latest" : s === "friends" ? "👥 Friends" : "🔥 Trending"}
-    </button>
-  ))}
-</div>
+      {/* Sort controls */}
+      <div className="flex gap-2 mb-4">
+        {["latest", "friends", "trending"].map(s => (
+          <button key={s} onClick={() => setSort(s)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition capitalize ${
+              sort === s ? "bg-white text-black" : "bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800"
+            }`}>
+            {s === "latest" ? "⏱ Latest" : s === "friends" ? "👥 Friends" : "🔥 Trending"}
+          </button>
+        ))}
+        <span className="ml-auto text-xs text-zinc-600 self-center">
+          Updated {lastRefresh.toLocaleTimeString()}
+        </span>
+      </div>
 
       {/* Posting status bar */}
       {postStatus && (
@@ -240,6 +295,9 @@ export default function FeedPage() {
                 <p className="text-sm font-semibold">{post.users?.display_name || post.users?.username}</p>
                 <p className="text-xs text-zinc-500">@{post.users?.username}</p>
               </div>
+              {(post as any).is_friend && (
+                <span className="ml-auto text-xs text-zinc-600 border border-zinc-700 px-2 py-0.5 rounded-full">Friend</span>
+              )}
             </div>
 
             {post.content && <p className="text-zinc-200 leading-relaxed mb-3">{post.content}</p>}
