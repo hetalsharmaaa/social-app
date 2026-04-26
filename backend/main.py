@@ -8,11 +8,11 @@ from routers.friends_router import router as friends_router
 from routers.notifications_router import router as notifications_router
 from routers.gamification_router import router as gamification_router
 
-app = FastAPI(title="SocialApp API", version="7.0.0")
+app = FastAPI(title="SocialApp API", version="8.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,4 +28,4 @@ app.include_router(gamification_router)
 
 @app.get("/")
 def root():
-    return {"status": "SocialApp API v7 is running"}
+    return {"status": "SocialApp API v8 is running"}
