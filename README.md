@@ -87,7 +87,7 @@ Open a pull request
 ⭐ Support
 Give it a star ⭐
 Open an issue if needed
-
+```
 
 🚀 Final Note
-<p align="center"> This project isn’t just about building a social app.<br> It’s about experimenting with <b>behavior-driven product design</b>. </p> ```
+<p align="center"> This project isn’t just about building a social app.<br> It’s about experimenting with <b>behavior-driven product design</b>. </p> 
