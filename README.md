@@ -97,18 +97,3 @@ If this project helped you:
 ❌ Open an issue if something feels off
 🚀 Final Note
 <p align="center"> This project isn’t just about building a social app.<br> It’s about experimenting with <b>behavior-driven product design</b>. </p> ```
-🔥 What this fixes (compared to your current one)
-✅ Title centered + bigger (<h1 align="center">)
-✅ Demo link centered → instantly visible
-✅ Clean spacing → no “text wall”
-✅ Balanced sections → looks like top GitHub projects
-✅ Uses HTML where Markdown is limited
-💣 Pro tip (this is what big repos do)
-
-If you want it to look EXACTLY like that fancy screenshot you sent, next upgrades are:
-
-badges (live demo, tech stack)
-screenshots section
-feature cards (with images)
-
-I can build that version too — like top 1% GitHub README.
